@@ -257,8 +257,24 @@ namespace CapriDesktop
 
         internal static byte[] Local(string text)
         {
-            try { return Clean(FromServer(text)); }
-            catch (Exception) { return Windows(text); }
+            try
+            {
+                byte[] cloned = Clean(FromServer(text));
+                Brain.Log(LocalServer, 0, "Free voice: cloned voice server answered, " + Seconds(cloned).ToString("0.0") + " s of audio");
+                return cloned;
+            }
+            catch (Exception) { }
+            try
+            {
+                byte[] wav = Windows(text);
+                Brain.Log("http://windows-speech/voice", 0, "Free voice: Windows voice made " + Seconds(wav).ToString("0.0") + " s of audio");
+                return wav;
+            }
+            catch (Exception error)
+            {
+                Brain.Log("http://windows-speech/voice", -1, "Free voice failed: " + error.Message);
+                throw;
+            }
         }
 
         private static byte[] FromServer(string text)
