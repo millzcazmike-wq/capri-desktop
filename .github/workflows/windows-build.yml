@@ -21,7 +21,7 @@ jobs:
 
           $ra      = "${env:ProgramFiles(x86)}\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8"
           $facades = Join-Path $ra "Facades"
-          $winmd   = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\UnionMetadata" -Recurse -Filter Windows.winmd | Sort-Object FullName | Select-Object -Last 1).FullName
+          $winmd   = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\UnionMetadata" -Recurse -Filter Windows.winmd | Where-Object { $_.FullName -notmatch "Facade" } | Sort-Object FullName | Select-Object -Last 1).FullName
           Write-Host "csc: $csc"
           Write-Host "winmd: $winmd"
 
