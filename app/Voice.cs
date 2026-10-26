@@ -64,7 +64,12 @@ namespace CapriDesktop
         private SoundPlayer player;
 #endif
 
+#if CROSS
         internal bool Ready { get { return Key != null && VoiceId != null; } }
+#else
+        // Free fallback: with no ElevenLabs key she uses the built-in Windows voice.
+        internal bool Ready { get { return true; } }
+#endif
 
 #if CROSS
         internal static string Protect(string key) { throw new PlatformNotSupportedException("Saving keys isn't ready on this system yet."); }
@@ -230,13 +235,70 @@ namespace CapriDesktop
             string key = Key;
             string id = VoiceId;
             string model = Model;
-            if (key == null || id == null) throw new VoiceException("No voice picked.");
+            if (key == null || id == null)
+            {
+#if CROSS
+                throw new VoiceException("No voice picked.");
+#else
+                return Local(text);
+#endif
+            }
             StringBuilder body = new StringBuilder("{\"text\":");
             body.Append(Quote(Sayable(text)));
             if (!string.IsNullOrEmpty(model)) body.Append(",\"model_id\":").Append(Quote(model));
             body.Append('}');
             return Clean(Send(Open("/v1/text-to-speech/" + Uri.EscapeDataString(id) + "?output_format=wav_24000", key, "POST"), Encoding.UTF8.GetBytes(body.ToString())));
         }
+
+#if !CROSS
+        // Free voice. First tries Capri's cloned voice from the local server (capri_voice_server.py),
+        // and if that isn't running, falls back to the built-in Windows voice.
+        internal const string LocalServer = "http://127.0.0.1:5005/";
+
+        internal static byte[] Local(string text)
+        {
+            try { return Clean(FromServer(text)); }
+            catch (Exception) { return Windows(text); }
+        }
+
+        private static byte[] FromServer(string text)
+        {
+            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(LocalServer);
+            request.Method = "POST";
+            request.ContentType = "application/json";
+            request.Timeout = 60000;
+            request.ReadWriteTimeout = 60000;
+            byte[] body = Encoding.UTF8.GetBytes("{\"text\":" + Quote(Sayable(text)) + "}");
+            request.ContentLength = body.Length;
+            using (Stream upload = request.GetRequestStream()) upload.Write(body, 0, body.Length);
+            using (WebResponse response = request.GetResponse())
+            using (Stream stream = response.GetResponseStream())
+            using (MemoryStream copy = new MemoryStream())
+            {
+                stream.CopyTo(copy);
+                return copy.ToArray();
+            }
+        }
+
+        // Windows' built-in text to speech: no key, no credits, works offline.
+        // Change Rate (-10 slow .. 10 fast) or the gender hint to taste.
+        private static byte[] Windows(string text)
+        {
+            const int rate = 22050;
+            using (System.Speech.Synthesis.SpeechSynthesizer synth = new System.Speech.Synthesis.SpeechSynthesizer())
+            using (MemoryStream pcm = new MemoryStream())
+            {
+                try { synth.SelectVoiceByHints(System.Speech.Synthesis.VoiceGender.Female); } catch (Exception) { }
+                synth.Rate = 1;
+                synth.SetOutputToAudioStream(pcm, new System.Speech.AudioFormat.SpeechAudioFormatInfo(rate, System.Speech.AudioFormat.AudioBitsPerSample.Sixteen, System.Speech.AudioFormat.AudioChannel.Mono));
+                synth.Speak(Sayable(text));
+                byte[] raw = pcm.ToArray();
+                short[] samples = new short[raw.Length / 2];
+                Buffer.BlockCopy(raw, 0, samples, 0, samples.Length * 2);
+                return Wave(samples, rate);
+            }
+        }
+#endif
 
         internal static string Quote(string value)
         {
